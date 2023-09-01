@@ -1,0 +1,107 @@
+captainVersion: 4
+services:
+    $$cap_appname-mongodb:
+      image: mongo:$$cap_mongo_version
+      volumes:
+        - $$cap_appname-db-data:/data/db
+      restart: always
+      caproverExtra:
+        notExposeAsWebApp: 'true'
+    $$cap_appname-opensearch:
+      image: opensearchproject/opensearch:$$cap_opensearch_version
+      environment:
+        - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+        - "bootstrap.memory_lock=true"
+        - "discovery.type=single-node"
+        - "action.auto_create_index=false"
+        - "plugins.security.ssl.http.enabled=false"
+        - "plugins.security.disabled=true"
+      ulimits:
+        memlock:
+          hard: -1
+          soft: -1
+        nofile:
+          soft: 65536
+          hard: 65536
+      volumes:
+        - $$cap_appname-os_data:/usr/share/opensearch/data
+      restart: always
+      caproverExtra:
+        notExposeAsWebApp: 'true'
+    $$cap_appname:
+      depends_on:
+        $$cap_appname-opensearch:
+          condition: "service_started"
+        $$cap_appname-mongodb:
+          condition: "service_started"
+      image: graylog/graylog:$$cap_graylog_version
+      restart: always
+      entrypoint: "/usr/bin/tini -- wait-for-it opensearch:9200 --  /docker-entrypoint.sh"
+      environment:
+        GRAYLOG_NODE_ID_FILE: "/usr/share/graylog/data/config/node-id"
+        GRAYLOG_ROOT_PASSWORD_SHA2: $$cap_graylog_password
+        GRAYLOG_HTTP_BIND_ADDRESS: "0.0.0.0:9000"
+        GRAYLOG_HTTP_EXTERNAL_URI: //$$cap_appname.$$cap_root_domain/
+        GRAYLOG_ELASTICSEARCH_HOSTS: http://srv-captain--$$cap_appname-opensearch:$$cap_container_port
+        GRAYLOG_MONGODB_URI: "mongodb://$$cap_appname-mongodb:27017/graylog"
+      ports:
+        - "5044:5044/tcp"   # Beats
+        - "5140:5140/udp"   # Syslog
+        - "5140:5140/tcp"   # Syslog
+        - "5555:5555/tcp"   # RAW TCP
+        - "5555:5555/udp"   # RAW TCP
+        - "9000:9000/tcp"   # Server API
+        - "12201:12201/tcp" # GELF TCP
+        - "12201:12201/udp" # GELF UDP
+        #- "10000:10000/tcp" # Custom TCP port
+        #- "10000:10000/udp" # Custom UDP port
+        - "13301:13301/tcp" # Forwarder data
+        - "13302:13302/tcp" # Forwarder config
+      volumes:
+        - $$cap_appname-data:/usr/share/graylog/data/data
+        - $$cap_appname-journal:/usr/share/graylog/data/journal
+      restart: "on-failure"
+      caproverExtra:
+        containerHttpPort: '9000'
+caproverOneClickApp:
+    variables:
+        - id: $$cap_graylog_version
+          label: Graylog Version
+          defaultValue: '5..0'
+          description: Check out their docker page for the valid tags https://hub.docker.com/r/graylog/graylog/tags
+          validRegex: /^([^\s^\/])+$/
+        - id: $$cap_graylog_password
+          label: Graylog Admin Password
+          defaultValue: ''
+          description: 'Admin password SHA256 encoded. Generate with: echo -n "<password>" | shasum -a 256 | cut -d" " -f1'
+          validRegex: /^([^\s^\/])+$/
+        - id: $$cap_mongo_version
+          label: MongoDB Version
+          defaultValue: '5.0'
+          description: Check out their docker page for the valid tags https://hub.docker.com/r/library/mongo/tags/
+          validRegex: /^([^\s^\/])+$/
+        - id: $$cap_opensearch_version
+          label: ‚Opensearch Version Tag '
+          description: 'Check out the releases overview: https://opensearch.org/docs/latest/version-history/'
+          defaultValue: 2.4.0
+          validRegex: /^([^\s^\/])+$/
+    instructions:
+        start: >-
+            Graylog Log Management.
+
+
+            NOTICE!:
+            Be sure to extend the virtual memory on all your hosts!
+            1. echo 'vm.max_map_count=262144' >> /etc/sysctl.conf
+            2. sysctl -p
+        end: >-
+            Deployment of Graylog if finished.
+            You will see 502 errors for the next 5+ minutes while Graylog starts up.
+            Goto <YOUR-APP-URL> and login as "admin" with your unhashed password.
+
+            IMPORTANT! Do not forget to map port 12201 and 12202 in your app config. Without port mapping, Graylog will not work.
+
+    displayName: 'Graylog'
+    isOfficial: true
+    description: Graylog is used for log management of both structured and unstructured data along with debugging applications.
+    documentation: Taken from https://hub.docker.com/r/graylog/graylog

@@ -10,12 +10,13 @@ services:
     $$cap_appname-opensearch:
       image: opensearchproject/opensearch:$$cap_opensearch_version
       environment:
-        - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
-        - "bootstrap.memory_lock=true"
-        - "discovery.type=single-node"
-        - "action.auto_create_index=false"
-        - "plugins.security.ssl.http.enabled=false"
-        - "plugins.security.disabled=true"
+        OPENSEARCH_JAVA_OPTS: -Xms1g -Xmx1g
+        bootstrap.memory_lock: true
+        discovery.type: single-node
+        # discovery.seed_hosts: '["127.0.0.1", "[::1]"]'
+        action.auto_create_index: false
+        plugins.security.ssl.http.enabled: false
+        plugins.security.disabled: true
       ulimits:
         memlock:
           hard: -1
@@ -24,7 +25,7 @@ services:
           soft: 65536
           hard: 65536
       volumes:
-        - $$cap_appname-os_data:/usr/share/opensearch/data
+        - $$cap_appname-data:/usr/share/opensearch/data
       restart: always
       caproverExtra:
         notExposeAsWebApp: 'true'
@@ -35,45 +36,48 @@ services:
         $$cap_appname-mongodb:
           condition: "service_started"
       image: graylog/graylog:$$cap_graylog_version
-      restart: always
       entrypoint: "/usr/bin/tini -- wait-for-it opensearch:9200 --  /docker-entrypoint.sh"
       environment:
-        GRAYLOG_NODE_ID_FILE: "/usr/share/graylog/data/config/node-id"
+        GRAYLOG_NODE_ID_FILE: /usr/share/graylog/data/config/node-id
+        GRAYLOG_PASSWORD_SECRET:  $$cap_graylog_secret
         GRAYLOG_ROOT_PASSWORD_SHA2: $$cap_graylog_password
         GRAYLOG_HTTP_BIND_ADDRESS: "0.0.0.0:9000"
-        GRAYLOG_HTTP_EXTERNAL_URI: //$$cap_appname.$$cap_root_domain/
-        GRAYLOG_ELASTICSEARCH_HOSTS: http://srv-captain--$$cap_appname-opensearch:$$cap_container_port
-        GRAYLOG_MONGODB_URI: "mongodb://$$cap_appname-mongodb:27017/graylog"
+        GRAYLOG_HTTP_EXTERNAL_URI: http://$$cap_appname.$$cap_root_domain/
+        GRAYLOG_ELASTICSEARCH_HOSTS: http://srv-captain--$$cap_appname-opensearch:9200
+        GRAYLOG_MONGODB_URI: mongodb://srv-captain--$$cap_appname-mongodb/graylog
       ports:
-        - "5044:5044/tcp"   # Beats
-        - "5140:5140/udp"   # Syslog
-        - "5140:5140/tcp"   # Syslog
-        - "5555:5555/tcp"   # RAW TCP
-        - "5555:5555/udp"   # RAW TCP
-        - "9000:9000/tcp"   # Server API
-        - "12201:12201/tcp" # GELF TCP
-        - "12201:12201/udp" # GELF UDP
+        - 5044:5044   # Beats
+        - 5140:5140   # Syslog
+        - 5555:5555   # RAW TCP
+        - 9000:9000   # Server API
+        - 12201:12201 # GELF UDP
         #- "10000:10000/tcp" # Custom TCP port
         #- "10000:10000/udp" # Custom UDP port
-        - "13301:13301/tcp" # Forwarder data
-        - "13302:13302/tcp" # Forwarder config
+        - 13301:13301 # Forwarder data
+        - 13302:13302 # Forwarder config
       volumes:
         - $$cap_appname-data:/usr/share/graylog/data/data
         - $$cap_appname-journal:/usr/share/graylog/data/journal
-      restart: "on-failure"
+      restart: on-failure
+      hostname: $$cap_appname.$$cap_root_domain
       caproverExtra:
         containerHttpPort: '9000'
 caproverOneClickApp:
     variables:
         - id: $$cap_graylog_version
           label: Graylog Version
-          defaultValue: '5..0'
+          defaultValue: '5.0'
           description: Check out their docker page for the valid tags https://hub.docker.com/r/graylog/graylog/tags
           validRegex: /^([^\s^\/])+$/
         - id: $$cap_graylog_password
-          label: Graylog Admin Password
-          defaultValue: ''
+          label: Graylog Admin Password. Default is 'admin'
+          defaultValue: '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918'
           description: 'Admin password SHA256 encoded. Generate with: echo -n "<password>" | shasum -a 256 | cut -d" " -f1'
+          validRegex: /^([^\s^\/])+$/
+        - id: $$cap_graylog_secret
+          label: Graylog Password Secret
+          defaultValue: 'ZVMiXqYt9OLNIq2Z6D6PtvXWAAlafGDg8UPheyZEL9E71RcBVaI3dEWPWOKOSr2EqJ6wkvRghnOjqJnPTB2RZPksPfjR6V46'
+          description: 'Password secret. Generate with: pwgen -N 1 -s 96'
           validRegex: /^([^\s^\/])+$/
         - id: $$cap_mongo_version
           label: MongoDB Version
@@ -81,8 +85,8 @@ caproverOneClickApp:
           description: Check out their docker page for the valid tags https://hub.docker.com/r/library/mongo/tags/
           validRegex: /^([^\s^\/])+$/
         - id: $$cap_opensearch_version
-          label: ‚Opensearch Version Tag '
-          description: 'Check out the releases overview: https://opensearch.org/docs/latest/version-history/'
+          label: Opensearch Version Tag
+          description: Check out the releases overview https://opensearch.org/docs/latest/version-history/
           defaultValue: 2.4.0
           validRegex: /^([^\s^\/])+$/
     instructions:
